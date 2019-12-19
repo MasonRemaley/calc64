@@ -33,10 +33,8 @@ pub fn main() anyerror!void {
         const operand = it.next() orelse return error.ParseError;
         const x = try std.fmt.parseInt(i8, operand, 10);
         if (mem.eql(u8, "+", operator)) {
-            std.debug.warn("append + {}\n", .{x});
             try list.append(Inst{ .add = x });
         } else if (mem.eql(u8, "-", operator)) {
-            std.debug.warn("append - {}\n", .{x});
             try list.append(Inst{ .sub = x });
         } else return error.ParseError;
     }
