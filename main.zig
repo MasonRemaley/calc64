@@ -144,9 +144,11 @@ pub fn main() anyerror!void {
     mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), p_type, endian);
     index += 4;
 
-    // var instructions = [_]Inst {
-    //     Add
-    // };
+    var instructions = [_]Inst {
+        .{ .add = 1 },
+        .{ .add = 2 },
+        .{ .add = 3 },
+    };
 
     var machine_code = try std.Buffer.init(std.heap.page_allocator, "");
 
@@ -158,9 +160,13 @@ pub fn main() anyerror!void {
     // add edi, 123
     const add = 0x83;
     const edi = 0xc7;
-    try machine_code.append(&[_]u8{
-        add, edi, 127
-    });    
+    for (instructions) |item| {
+        switch (item) {
+            .add => |n| try machine_code.append(&[_]u8 {
+                add, edi, n
+            }),
+        }
+    }
 
 
     // exit(edi)
