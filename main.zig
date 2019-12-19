@@ -4,7 +4,10 @@ const mem = std.mem;
 const assert = std.debug.assert;
 
 const Inst = union(enum) {
-    add: u8,
+    add: i8,
+    sub: i8,
+    mul: i8,
+    div: i8,
 };
 
 fn push_string(strings: []u8, index: *usize, string: [] const u8) usize {
@@ -148,6 +151,8 @@ pub fn main() anyerror!void {
         .{ .add = 1 },
         .{ .add = 2 },
         .{ .add = 3 },
+        .{ .sub = 4 },
+        .{ .mul = 2 },
     };
 
     var machine_code = try std.Buffer.init(std.heap.page_allocator, "");
@@ -158,13 +163,18 @@ pub fn main() anyerror!void {
     });
 
     // add edi, 123
-    const add = 0x83;
-    const edi = 0xc7;
     for (instructions) |item| {
         switch (item) {
             .add => |n| try machine_code.append(&[_]u8 {
-                add, edi, n
+                0x83, 0xc7, @bitCast(u8, n),
             }),
+            .sub => |n| try machine_code.append(&[_]u8 {
+                0x83, 0xef, @bitCast(u8, n),
+            }),
+            .mul => |n| try machine_code.append(&[_]u8 {
+                0x6b, 0xff, @bitCast(u8, n),
+            }),
+            .div => |n| {},
         }
     }
 
