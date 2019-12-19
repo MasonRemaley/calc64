@@ -3,6 +3,15 @@ const elf = std.elf;
 const mem = std.mem;
 const assert = std.debug.assert;
 
+fn push_string(strings: []u8, index: *usize, string: [] const u8) usize {
+    const result = index.*;
+    mem.copy(u8, strings[index.* ..], string);
+    index.* += string.len;
+    strings[index.*] = 0;
+    index.* += 1;
+    return result;
+}
+
 pub fn main() anyerror!void {
     const entry_addr = 0x1337000;
     const target = std.Target.current;
@@ -15,9 +24,18 @@ pub fn main() anyerror!void {
         else => return error.UnsupportedArchitecture,
     };
 
+    var string_buf: [100]u8 = undefined;
+    var string_offset: usize = 0;
+    const null_index = push_string(&string_buf, &string_offset, "");
+    const strtab_index = push_string(&string_buf, &string_offset, ".shstrtab");
+    const symtab_index = push_string(&string_buf, &string_offset, ".symtab");
+    const text_index = push_string(&string_buf, &string_offset, ".text");
+    const start_index = push_string(&string_buf, &string_offset, "_start");
+
     const endian = target.getArch().endian();
     const end_of_program_header_offset = @sizeOf(elf.Elf64_Ehdr) + @sizeOf(elf.Elf64_Phdr);
-    var hdr_buf: [end_of_program_header_offset + @sizeOf(elf.Elf64_Shdr)]u8 = undefined;
+    const sections = 4;
+    var hdr_buf: [end_of_program_header_offset + @sizeOf(elf.Elf64_Shdr) * sections]u8 = undefined;
     var index: usize = 0;
 
     mem.copy(u8, hdr_buf[index..], "\x7fELF");
@@ -72,8 +90,7 @@ pub fn main() anyerror!void {
             index += 8;
 
             // e_shoff
-            // mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), end_of_program_header_offset, endian); // XXX: ...
-            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), 0, endian);
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), end_of_program_header_offset, endian);
             index += 8;
         },
     }
@@ -107,11 +124,11 @@ pub fn main() anyerror!void {
     mem.writeInt(u16, @ptrCast(*[2]u8, &hdr_buf[index]), e_shentsize, endian);
     index += 2;
 
-    const e_shnum = 0; // XXX: ...
+    const e_shnum = sections;
     mem.writeInt(u16, @ptrCast(*[2]u8, &hdr_buf[index]), e_shnum, endian);
     index += 2;
 
-    const e_shstrndx = 0;
+    const e_shstrndx = 1;
     mem.writeInt(u16, @ptrCast(*[2]u8, &hdr_buf[index]), e_shstrndx, endian);
     index += 2;
 
@@ -130,14 +147,18 @@ pub fn main() anyerror!void {
     };
 
     const zeroes = [1]u8{0} ** 0x1000;
-    var pad: usize = undefined;
 
+    const unaligned = hdr_buf.len + string_offset;
+    const symbol_table_sh_align = 8;
+    const symbol_table_sh_offset = mem.alignForward(unaligned, symbol_table_sh_align);
+    const symbol_table_padding = symbol_table_sh_offset - unaligned;
+    const symbol_entries = 2;
+    const end_of_shit = symbol_table_sh_offset + symbol_entries * @sizeOf(elf.Elf64_Sym);
+    const p_offset = mem.alignForward(end_of_shit, 0x1000);
+    const pad = p_offset - end_of_shit;
     switch (ptr_width) {
         ._32 => @panic("TODO"),
         ._64 => {
-            const end_of_headers = hdr_buf.len;
-            const p_offset = mem.alignForward(end_of_headers, 0x1000);
-            pad = p_offset - end_of_headers;
 
             const p_flags = elf.PF_X | elf.PF_R;
             mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), p_flags, endian);
@@ -171,13 +192,211 @@ pub fn main() anyerror!void {
         else => unreachable,
     }
 
-    // XXX: write section header
-    pad += @sizeOf(elf.Elf64_Shdr);
-    // assert(index == hdr_buf.len);
+    // Write section headers
+    {
+        // Null
+        {
+            const sh_name = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_name, endian);
+            index += 4;
+
+            const sh_type = elf.SHT_NULL;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_type, endian);
+            index += 4;
+
+            const sh_flags = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_flags, endian);
+            index += 8;
+
+            const sh_addr = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_addr, endian);
+            index += 8;
+
+            const sh_offset = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_offset, endian);
+            index += 8;
+
+            const sh_size = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_size, endian);
+            index += 8;
+
+            const sh_link = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_link, endian);
+            index += 4;
+
+            const sh_info = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_info, endian);
+            index += 4;
+
+            const sh_align = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_align, endian);
+            index += 8;
+
+            const sh_entsize = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_entsize, endian);
+            index += 8;
+        }
+
+        // Strings
+        {
+            const sh_name = @intCast(u32, strtab_index);
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_name, endian);
+            index += 4;
+
+            const sh_type = elf.SHT_STRTAB;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_type, endian);
+            index += 4;
+
+            const sh_flags = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_flags, endian);
+            index += 8;
+
+            const sh_addr = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_addr, endian);
+            index += 8;
+
+            const sh_offset = hdr_buf.len;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_offset, endian);
+            index += 8;
+
+            const sh_size = string_offset;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_size, endian);
+            index += 8;
+
+            const sh_link = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_link, endian);
+            index += 4;
+
+            const sh_info = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_info, endian);
+            index += 4;
+
+            const sh_align = 1;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_align, endian);
+            index += 8;
+
+            const sh_entsize = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_entsize, endian);
+            index += 8;
+        }
+
+        // Text
+        {
+            const sh_name = @intCast(u32, text_index);
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_name, endian);
+            index += 4;
+
+            const sh_type = elf.SHT_PROGBITS;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_type, endian);
+            index += 4;
+
+            const sh_flags = elf.SHF_ALLOC | elf.SHF_EXECINSTR;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_flags, endian);
+            index += 8;
+
+            const sh_addr = entry_addr;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_addr, endian);
+            index += 8;
+
+            const sh_offset = p_offset;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_offset, endian);
+            index += 8;
+
+            const sh_size = machine_code.len;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_size, endian);
+            index += 8;
+
+            const sh_link = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_link, endian);
+            index += 4;
+
+            const sh_info = 0;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_info, endian);
+            index += 4;
+
+            const sh_align = 0x1000;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_align, endian);
+            index += 8;
+
+            const sh_entsize = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_entsize, endian);
+            index += 8;
+        }
+
+        // Symbol table
+        {
+            const sh_name = @intCast(u32, symtab_index);
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_name, endian);
+            index += 4;
+
+            const sh_type = elf.SHT_SYMTAB;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_type, endian);
+            index += 4;
+
+            const sh_flags = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_flags, endian);
+            index += 8;
+
+            const sh_addr = 0;
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_addr, endian);
+            index += 8;
+
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), symbol_table_sh_offset, endian);
+            index += 8;
+
+            const sh_size = symbol_entries * @sizeOf(elf.Elf64_Sym);
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_size, endian);
+            index += 8;
+
+            const sh_link = 1;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_link, endian);
+            index += 4;
+
+            const sh_info = 2;
+            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), sh_info, endian);
+            index += 4;
+
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), symbol_table_sh_align, endian);
+            index += 8;
+
+            const sh_entsize = @sizeOf(elf.Elf64_Sym);
+            mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_entsize, endian);
+            index += 8;
+        }
+    }
+
+    assert(index == hdr_buf.len);
 
     const file = try std.fs.File.openWriteMode("output", 0o755);
     defer file.close();
+
+    const out = &file.outStream().stream;
+
     try file.write(hdr_buf[0..index]);
+    try file.write(string_buf[0..string_offset]);
+    assert(symbol_entries == 2);
+    try file.write(zeroes[0..symbol_table_padding]);
+    try writeStruct(out, elf.Elf64_Sym, elf.Elf64_Sym {
+        .st_name = 0,
+        .st_info = 0,
+        .st_other = 0,
+        .st_shndx = 0,
+        .st_value = 0,
+        .st_size = 0,
+    });
+    try writeStruct(out, elf.Elf64_Sym, elf.Elf64_Sym {
+        .st_name = @intCast(u32, start_index),
+        .st_info = (elf.STB_LOCAL << 4) | elf.STT_FUNC,
+        .st_other = 0,
+        .st_shndx = 2,
+        .st_value = entry_addr,
+        .st_size = machine_code.len,
+    });
     try file.write(zeroes[0..pad]);
     try file.write(&machine_code);
+}
+
+pub fn writeStruct(self: var, comptime T: type, value: T) !void {
+    comptime assert(@typeInfo(T).Struct.layout != .Auto);
+    return self.writeFn(self, @ptrCast([*] const u8, &value)[0..@sizeOf(T)]);
 }
