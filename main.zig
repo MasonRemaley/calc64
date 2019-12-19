@@ -3,6 +3,10 @@ const elf = std.elf;
 const mem = std.mem;
 const assert = std.debug.assert;
 
+const Inst = union(enum) {
+    add: u8,
+};
+
 fn push_string(strings: []u8, index: *usize, string: [] const u8) usize {
     const result = index.*;
     mem.copy(u8, strings[index.* ..], string);
@@ -140,11 +144,30 @@ pub fn main() anyerror!void {
     mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), p_type, endian);
     index += 4;
 
-    const machine_code = [_]u8{
+    // var instructions = [_]Inst {
+    //     Add
+    // };
+
+    var machine_code = try std.Buffer.init(std.heap.page_allocator, "");
+
+    // xor edi, edi
+    try machine_code.append(&[_]u8{
+        0x31, 0xff,
+    });
+
+    // add edi, 123
+    const add = 0x83;
+    const edi = 0xc7;
+    try machine_code.append(&[_]u8{
+        add, edi, 127
+    });    
+
+
+    // exit(edi)
+    try machine_code.append(&[_]u8{
         0xb8, 0x3c, 0x00, 0x00, 0x00, // mov eax, 0x3c
-        0x31, 0xff, // xor edi, edi
-            0x0f, 0x05, // syscall
-    };
+        0x0f, 0x05, // syscall
+    });
 
     const zeroes = [1]u8{0} ** 0x1000;
 
@@ -175,11 +198,11 @@ pub fn main() anyerror!void {
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), p_paddr, endian);
             index += 8;
 
-            const p_filesz = machine_code.len;
+            const p_filesz = machine_code.len();
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), p_filesz, endian);
             index += 8;
 
-            const p_memsz = machine_code.len;
+            const p_memsz = machine_code.len();
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), p_memsz, endian);
             index += 8;
 
@@ -302,7 +325,7 @@ pub fn main() anyerror!void {
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_offset, endian);
             index += 8;
 
-            const sh_size = machine_code.len;
+            const sh_size = machine_code.len();
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), sh_size, endian);
             index += 8;
 
@@ -390,10 +413,10 @@ pub fn main() anyerror!void {
         .st_other = 0,
         .st_shndx = 2,
         .st_value = entry_addr,
-        .st_size = machine_code.len,
+        .st_size = machine_code.len(),
     });
     try file.write(zeroes[0..pad]);
-    try file.write(&machine_code);
+    try file.write(machine_code.toSlice());
 }
 
 pub fn writeStruct(self: var, comptime T: type, value: T) !void {
