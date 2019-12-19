@@ -2,8 +2,9 @@ const std = @import("std");
 const elf = std.elf;
 const mem = std.mem;
 const assert = std.debug.assert;
+//const parse = @import("src/parse.zig").parse;
 
-const Inst = union(enum) {
+pub const Inst = union(enum) {
     add: i8,
     sub: i8,
     mul: i8,
@@ -20,6 +21,28 @@ fn push_string(strings: []u8, index: *usize, string: [] const u8) usize {
 }
 
 pub fn main() anyerror!void {
+    const args = try std.process.argsAlloc(std.heap.page_allocator);
+    //const instructions = try parse(args[1]);
+    var list = std.ArrayList(Inst).init(std.heap.page_allocator);
+
+    var it = mem.tokenize(args[1], " \t\n\r");
+    const first_operand = it.next() orelse return error.ParseError;
+    try list.append(Inst{ .add = try std.fmt.parseInt(i8, first_operand, 10)});
+    while (true) {
+        const operator = it.next() orelse break;
+        const operand = it.next() orelse return error.ParseError;
+        const x = try std.fmt.parseInt(i8, operand, 10);
+        if (mem.eql(u8, "+", operator)) {
+            std.debug.warn("append + {}\n", .{x});
+            try list.append(Inst{ .add = x });
+        } else if (mem.eql(u8, "-", operator)) {
+            std.debug.warn("append - {}\n", .{x});
+            try list.append(Inst{ .sub = x });
+        } else return error.ParseError;
+    }
+    const instructions = list.toOwnedSlice();
+
+
     const entry_addr = 0x1337000;
     const target = std.Target.current;
     const ptr_width: enum {
@@ -146,14 +169,6 @@ pub fn main() anyerror!void {
     const p_type = elf.PT_LOAD;
     mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), p_type, endian);
     index += 4;
-
-    var instructions = [_]Inst {
-        .{ .add = 1 },
-        .{ .add = 2 },
-        .{ .add = 3 },
-        .{ .sub = 4 },
-        .{ .mul = 2 },
-    };
 
     var machine_code = try std.Buffer.init(std.heap.page_allocator, "");
 
