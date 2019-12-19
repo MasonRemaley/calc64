@@ -16,7 +16,8 @@ pub fn main() anyerror!void {
     };
 
     const endian = target.getArch().endian();
-    var hdr_buf: [@sizeOf(elf.Elf64_Ehdr) + @sizeOf(elf.Elf64_Phdr)]u8 = undefined;
+    const end_of_program_header_offset = @sizeOf(elf.Elf64_Ehdr) + @sizeOf(elf.Elf64_Phdr);
+    var hdr_buf: [end_of_program_header_offset + @sizeOf(elf.Elf64_Shdr)]u8 = undefined;
     var index: usize = 0;
 
     mem.copy(u8, hdr_buf[index..], "\x7fELF");
@@ -59,17 +60,7 @@ pub fn main() anyerror!void {
 
     switch (ptr_width) {
         ._32 => {
-            // e_entry
-            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), @intCast(u32, entry_addr), endian);
-            index += 4;
-
-            // e_phoff
-            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), @sizeOf(elf.Elf32_Ehdr), endian);
-            index += 4;
-
-            // e_shoff
-            mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), 0, endian);
-            index += 4;
+            unreachable;
         },
         ._64 => {
             // e_entry
@@ -81,6 +72,7 @@ pub fn main() anyerror!void {
             index += 8;
 
             // e_shoff
+            // mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), end_of_program_header_offset, endian); // XXX: ...
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), 0, endian);
             index += 8;
         },
@@ -115,7 +107,7 @@ pub fn main() anyerror!void {
     mem.writeInt(u16, @ptrCast(*[2]u8, &hdr_buf[index]), e_shentsize, endian);
     index += 2;
 
-    const e_shnum = 0;
+    const e_shnum = 0; // XXX: ...
     mem.writeInt(u16, @ptrCast(*[2]u8, &hdr_buf[index]), e_shnum, endian);
     index += 2;
 
@@ -143,9 +135,9 @@ pub fn main() anyerror!void {
     switch (ptr_width) {
         ._32 => @panic("TODO"),
         ._64 => {
-            const phdr_end = @sizeOf(elf.Elf64_Ehdr) + @sizeOf(elf.Elf64_Phdr);
-            const p_offset = mem.alignForward(phdr_end, 0x1000);
-            pad = p_offset - phdr_end;
+            const end_of_headers = hdr_buf.len;
+            const p_offset = mem.alignForward(end_of_headers, 0x1000);
+            pad = p_offset - end_of_headers;
 
             const p_flags = elf.PF_X | elf.PF_R;
             mem.writeInt(u32, @ptrCast(*[4]u8, &hdr_buf[index]), p_flags, endian);
@@ -174,10 +166,14 @@ pub fn main() anyerror!void {
             mem.writeInt(u64, @ptrCast(*[8]u8, &hdr_buf[index]), p_align, endian);
             index += 8;
 
-            assert(index == phdr_end);
+            assert(index == end_of_program_header_offset);
         },
         else => unreachable,
     }
+
+    // XXX: write section header
+    pad += @sizeOf(elf.Elf64_Shdr);
+    // assert(index == hdr_buf.len);
 
     const file = try std.fs.File.openWriteMode("output", 0o755);
     defer file.close();
